@@ -4,6 +4,8 @@ import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 import numpy as np
 import json
+from PIL import Image
+import torch
 
 from utils.query_processing import Translation
 from utils.faiss import Myfaiss
@@ -73,6 +75,24 @@ def get_img():
     return Response((b'--frame\r\n'
                      b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n\r\n'),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/upload', methods=['POST'])
+def upload_image():
+    file = request.files['file']
+    image = Image.open(file)
+    
+    # Preprocess and encode the image using CLIP
+    image_tensor = MyFaiss.preprocess(image).unsqueeze(0)
+    with torch.no_grad():
+        query_vector = MyFaiss.model.encode_image(image_tensor).cpu().numpy()
+    
+    # Search for the most similar images in FAISS
+    D, I = MyFaiss.index.search(query_vector, k=5)  # Adjust 'k' as needed
+    
+    # Retrieve the paths of the similar images
+    similar_images = [DictImagePath[i] for i in I[0]]
+    
+    return render_template('results.html', images=similar_images)
 
 if __name__ == '__main__':
     app.run(debug=True, host="0.0.0.0", port=5001)
